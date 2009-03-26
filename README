@@ -1,0 +1,54 @@
+				ptp-gadget
+
+This is a device-side implementation of the PTP (Picture Transfer Protocol) /
+PIMA-15740 standard for Linux. It allows a Linux system with a USB device
+hardware to present itself to a USB host as a still camera with PTP support.
+This is an open-source project, licensed under GPL v3, hence the author is
+hoping, that it will be useful to others, and that others will contribute to it,
+eventually making it a complete implementation of the standard.
+
+The driver works completely in user-space and uses gadgetfs to communicate with
+USB gadget hardware.
+
+The code is based on the gadgetfs examples from
+http://www.linux-usb.org/gadget/usb.c and uses unchanged
+http://www.linux-usb.org/gadget/usbstring.[ch].
+
+As of v0.2 only the minimal compulsory set of PTP requests, as specified in the
+standard, is supported. Supported are downloading of images and generation of
+thumbnails, using the "convert" utility from the ImageMagick package. Several
+popular image formats are supported, but currently only tiff images are
+processed. Thumbnails are created as uncompressed 160x120 pixel TIFF images and
+are stored under /var/cache/ptp/thumb/, so this directory must exist and be
+writable by the ptp-gadget user.
+
+Note about USB IDs: currently you cannot build the package as is, because we
+have no valid Vendor and Product IDs yet. As soon as IDs are available, they
+will be added to the package.
+
+To build use
+
+make KERNEL_SRC=<path-to-kernel-sources> CROSS_COMPILE=<cross-compiler-prefix>
+
+Of course, you can omit KERNEL_SRC if you have new enough linux headers in your
+build environment, and CROSS_COMPILE if you are compiling natively. To install
+
+make DESTDIR=<installation-prefix> install
+
+The program takes one compulsory parameter - the path to the directory, in which
+images are stored. Optionally, "-v" switches can be used to increment verbosity
+level of the program.
+
+Known problems: not yet working with Mac OS X (tested with 10.4) hosts, previous
+versions did not work with MS Windows, status of the current version is unknown.
+A possible reason can be unimplemented Associations, whereas normally still
+cameras store images under a "dcim" directory.
+
+To contact developers of this software please write to the Linux USB mailing
+list at <linux-usb@vger.kernel.org> and (optionally) CC the original author as
+specified in the ptp.c file.
+
+See file COPYING for a copy of the GPL v3 license.
+
+The initial development has been financed by TQS (http://www.tqs.de/) and
+accomplished by DENX (http://www.denx.de/).
