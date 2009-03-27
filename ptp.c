@@ -1022,8 +1022,8 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 	}
 
 	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
-	total = __cpu_to_le32(obj->info_size + sizeof(*s_container));
-	s_container->length = total;
+	total = obj->info_size + sizeof(*s_container);
+	s_container->length = __cpu_to_le32(total);
 	offset = sizeof(*s_container);
 	info = &obj->info;
 
@@ -1924,7 +1924,8 @@ static int enum_objects(const char *path)
 
 		(*obj)->handle = ++handle;
 
-		(*obj)->info_size = sizeof((*obj)->info) + 2 * (datelen + namelen) + 2;
+		/* Fixed size object info, filename, capture date, and two empty strings */
+		(*obj)->info_size = sizeof((*obj)->info) + 2 * (datelen + namelen) + 4;
 
 		(*obj)->info.storage_id			= __cpu_to_le32(STORE_ID);
 		(*obj)->info.object_format		= __cpu_to_le16(PIMA15740_FMT_TIFF);
@@ -1943,10 +1944,14 @@ static int enum_objects(const char *path)
 		(*obj)->info.sequence_number		= __cpu_to_le32(0);
 		strncpy((*obj)->name, dentry->d_name, sizeof((*obj)->name));
 
-		(*obj)->info.strings[0]			= namelen;
+		(*obj)->info.strings[0]					= namelen;
 		memcpy((*obj)->info.strings + 1, fname_ucs2, namelen * 2);
-		(*obj)->info.strings[1 + namelen * 2]	= datelen;
+		(*obj)->info.strings[1 + namelen * 2]			= datelen;
 		memcpy((*obj)->info.strings + 2 + namelen * 2, mod_ucs2, datelen * 2);
+		/* Empty Modification Date */
+		(*obj)->info.strings[2 + (namelen + datelen) * 2]	= 0;
+		/* Empty Keywords */
+		(*obj)->info.strings[3 + (namelen + datelen) * 2]	= 0;
 
 		obj = &(*obj)->next;
 		*obj = NULL;
