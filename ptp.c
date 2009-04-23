@@ -1228,7 +1228,7 @@ static int send_object_or_thumb(void *recv_buf, void *send_buf, size_t send_len,
 	} else {
 		char *dot = strrchr(obj->name, '.');
 		*dot = '\0';			/* We know there is a dot in the name */
-		snprintf(name, sizeof(name) - 1, "%s.thumb.%s", obj->name, dot + 1);
+		snprintf(name, sizeof(name) - 1, "%s.thumb.jpeg", obj->name);
 		*dot = '.';
 		name[sizeof(name) - 1] = '\0';
 		ret = chdir(THUMB_LOCATION);
@@ -2004,15 +2004,35 @@ static int enum_objects(const char *path)
 		struct stat fstat, tstat;
 		char *dot;
 		size_t namelen, datelen, osize;
+		enum pima15740_data_format format;
 		struct tm mod_tm;
 
 		dentry->d_name[sizeof(dentry->d_name) - 1] = '\0';
 		dot = strrchr(dentry->d_name, '.');
+
 		if (!dot || dot == dentry->d_name)
 			continue;
+
 		if (strcasecmp(dot, ".tif") &&
-		    strcasecmp(dot, ".tiff"))
+		    strcasecmp(dot, ".tiff") &&
+		    strcasecmp(dot, ".jpg") &&
+		    strcasecmp(dot, ".jpeg"))
 			continue;
+
+		/* TODO: use identify from ImageMagick and parse its output */
+		switch (dot[1]) {
+		case 't':
+		case 'T':
+			format = PIMA15740_FMT_I_TIFF;
+			break;
+		case 'j':
+		case 'J':
+			format = PIMA15740_FMT_I_EXIF_JPEG;
+			break;
+		default:
+			format = PIMA15740_FMT_I_UNDEFINED;
+		}
+
 		ret = stat(dentry->d_name, &fstat);
 		if (ret < 0)
 			break;
@@ -2040,8 +2060,8 @@ static int enum_objects(const char *path)
 		/* Put thumbnails under /var/cache/ptp/thumb/
 		 * and call them <filename>.thumb.<extension> */
 		*dot = '\0';
-		snprintf(thumb, sizeof(thumb), THUMB_LOCATION "%s.thumb.%s",
-			 dentry->d_name, dot + 1);
+		snprintf(thumb, sizeof(thumb), THUMB_LOCATION "%s.thumb.jpeg",
+			 dentry->d_name);
 		*dot = '.';
 		if (stat(thumb, &tstat) < 0 || tstat.st_mtime < fstat.st_mtime) {
 			pid_t converter;
@@ -2065,8 +2085,8 @@ static int enum_objects(const char *path)
 					continue;
 				}
 			} else
-				execlp("convert", "convert", "-compress", "none",
-				       "-sample", THUMB_SIZE, dentry->d_name, thumb, NULL);
+				execlp("convert", "convert", "-thumbnail", THUMB_SIZE,
+				       dentry->d_name, thumb, NULL);
 		}
 
 		/* namelen and datelen include terminating '\0', plus 4 string-size bytes */
@@ -2088,10 +2108,10 @@ static int enum_objects(const char *path)
 		(*obj)->info_size = sizeof((*obj)->info) + 2 * (datelen + namelen) + 4;
 
 		(*obj)->info.storage_id			= __cpu_to_le32(STORE_ID);
-		(*obj)->info.object_format		= __cpu_to_le16(PIMA15740_FMT_I_TIFF);
+		(*obj)->info.object_format		= __cpu_to_le16(format);
 		(*obj)->info.protection_status		= __cpu_to_le16(fstat.st_mode & S_IWUSR ? 0 : 1);
 		(*obj)->info.object_compressed_size	= __cpu_to_le32(fstat.st_size);
-		(*obj)->info.thumb_format		= __cpu_to_le16(PIMA15740_FMT_I_TIFF);
+		(*obj)->info.thumb_format		= __cpu_to_le16(PIMA15740_FMT_I_JFIF);
 		(*obj)->info.thumb_compressed_size	= __cpu_to_le32(tstat.st_size);
 		(*obj)->info.thumb_pix_width		= __cpu_to_le32(THUMB_WIDTH);
 		(*obj)->info.thumb_pix_height		= __cpu_to_le32(THUMB_HEIGHT);
