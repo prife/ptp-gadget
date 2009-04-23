@@ -1848,6 +1848,7 @@ static int enum_objects(const char *path)
 		struct stat fstat, tstat;
 		char *dot;
 		size_t namelen, datelen, osize;
+		struct tm mod_tm;
 
 		dentry->d_name[sizeof(dentry->d_name) - 1] = '\0';
 		dot = strrchr(dentry->d_name, '.');
@@ -1866,19 +1867,22 @@ static int enum_objects(const char *path)
 		if (ret)
 			break;
 
-		/* ctime() returns ASCII independent from locale */
-		ctime_r(&fstat.st_mtime, mod);
-		datelen = strlen(mod);
-		/* Remove newline */
-		mod[datelen - 1] = '\0';
+		gmtime_r(&fstat.st_mtime, &mod_tm);
+		snprintf(mod, sizeof(mod),"%04u%02u%02uT%02u%02u%02u.0Z",
+			 mod_tm.tm_year + 1900, mod_tm.tm_mon + 1,
+			 mod_tm.tm_mday, mod_tm.tm_hour,
+			 mod_tm.tm_min, mod_tm.tm_sec);
+
+		/* String length including the trailing '\0' */
+		datelen = strlen(mod) + 1;
 		ret = put_string(ic, mod_ucs2, mod, datelen);
 		if (ret) {
 			mod[0] = '\0';
 			datelen = 0;
 		}
 
-		/* For starters assume thumbnails available under /var/cache/ptp/thumb/
-		 * and are called <filename>.thumb.<extension> */
+		/* Put thumbnails under /var/cache/ptp/thumb/
+		 * and call them <filename>.thumb.<extension> */
 		*dot = '\0';
 		snprintf(thumb, sizeof(thumb), THUMB_LOCATION "%s.thumb.%s",
 			 dentry->d_name, dot + 1);
@@ -1909,8 +1913,8 @@ static int enum_objects(const char *path)
 				       "-sample", THUMB_SIZE, dentry->d_name, thumb, NULL);
 		}
 
-		/* namelen and datelen include terminating '\0', plus 2 string-size bytes */
-		osize = sizeof(**obj) + 2 * (datelen + namelen) + 2;
+		/* namelen and datelen include terminating '\0', plus 4 string-size bytes */
+		osize = sizeof(**obj) + 2 * (datelen + namelen) + 4;
 
 		if (verbose)
 			fprintf(stderr, "Listing image %s, modified %s, info-size %u\n",
@@ -1946,6 +1950,7 @@ static int enum_objects(const char *path)
 
 		(*obj)->info.strings[0]					= namelen;
 		memcpy((*obj)->info.strings + 1, fname_ucs2, namelen * 2);
+		/* We use file modification date as Capture Date */
 		(*obj)->info.strings[1 + namelen * 2]			= datelen;
 		memcpy((*obj)->info.strings + 2 + namelen * 2, mod_ucs2, datelen * 2);
 		/* Empty Modification Date */
