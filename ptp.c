@@ -37,6 +37,7 @@
 #include "usbstring.h"
 
 #define min(a,b) ({ typeof(a) __a = (a); typeof(b) __b = (b); __a < __b ? __a : __b; })
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 static int verbose;
 
@@ -60,6 +61,7 @@ static int verbose;
 #define PTP_MANUFACTURER	"Manufacturer name goes here"
 #define PTP_MODEL		"Linux USB Still Image gadget"
 #define PTP_STORAGE_DESC	"SD/MMC"
+#define PTP_MODEL_DIR		"100LINUX"
 /* These have been chosen with meaningful values, can be safely preserved */
 #define DRIVER_PRODUCT		"PTP gadget"
 #define DRIVER_CONFIG		"Configuration 0"
@@ -355,12 +357,15 @@ enum pima15740_response_code {
 };
 
 enum pima15740_data_format {
-	PIMA15740_FMT_UNDEFINED			= 0x3800,
-	PIMA15740_FMT_EXIF_JPEG			= 0x3801,
-	PIMA15740_FMT_TIFF_EP			= 0x3802,
-	PIMA15740_FMT_PNG			= 0x380b,
-	PIMA15740_FMT_TIFF			= 0x380d,
-	PIMA15740_FMT_TIFF_IT			= 0x380e,
+	PIMA15740_FMT_A_UNDEFINED		= 0x3000,
+	PIMA15740_FMT_A_ASSOCIATION		= 0x3001,
+	PIMA15740_FMT_I_UNDEFINED		= 0x3800,
+	PIMA15740_FMT_I_EXIF_JPEG		= 0x3801,
+	PIMA15740_FMT_I_TIFF_EP			= 0x3802,
+	PIMA15740_FMT_I_JFIF			= 0x3808,
+	PIMA15740_FMT_I_PNG			= 0x380b,
+	PIMA15740_FMT_I_TIFF			= 0x380d,
+	PIMA15740_FMT_I_TIFF_IT			= 0x380e,
 };
 
 enum pima15740_storage_type {
@@ -388,6 +393,34 @@ static const char manuf[] = PTP_MANUFACTURER;
 static const char model[] = PTP_MODEL;
 static const char storage_desc[] = PTP_STORAGE_DESC;
 
+#define SUPPORTED_OPERATIONS					\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_DEVICE_INFO),	\
+	__constant_cpu_to_le16(PIMA15740_OP_OPEN_SESSION),	\
+	__constant_cpu_to_le16(PIMA15740_OP_CLOSE_SESSION),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_STORAGE_IDS),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_STORAGE_INFO),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_NUM_OBJECTS),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_HANDLES),\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_INFO),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT),	\
+	__constant_cpu_to_le16(PIMA15740_OP_GET_THUMB),
+
+static uint16_t dummy_supported_operations[] = {
+	SUPPORTED_OPERATIONS
+};
+
+#define SUPPORTED_FORMATS					\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_EXIF_JPEG),	\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_TIFF_EP),	\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_PNG),		\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_TIFF),		\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_TIFF_IT),	\
+	__constant_cpu_to_le16(PIMA15740_FMT_I_JFIF),
+
+static uint16_t dummy_supported_formats[] = {
+	SUPPORTED_FORMATS
+};
+
 struct my_device_info {
 	uint16_t	std_ver;
 	uint32_t	vendor_ext_id;
@@ -395,12 +428,12 @@ struct my_device_info {
 	uint8_t		vendor_ext_desc_len;
 	uint16_t	func_mode;
 	uint32_t	operations_n;
-	uint16_t	operations[10];
+	uint16_t	operations[ARRAY_SIZE(dummy_supported_operations)];
 	uint32_t	events_n;
 	uint32_t	device_properties_n;
 	uint32_t	capture_formats_n;
 	uint32_t	image_formats_n;
-	uint16_t	image_formats[5];
+	uint16_t	image_formats[ARRAY_SIZE(dummy_supported_formats)];
 	uint8_t		manuf_len;
 	uint8_t		manuf[sizeof(manuf) * 2];
 	uint8_t		model_len;
@@ -410,34 +443,21 @@ struct my_device_info {
 } __attribute__ ((packed));
 
 struct my_device_info dev_info = {
-	.std_ver = __constant_cpu_to_le16(100),
-	.vendor_ext_id = __constant_cpu_to_le32(0),
-	.vendor_ext_ver = __constant_cpu_to_le16(0),
-	.vendor_ext_desc_len = 0,
-	.func_mode = __constant_cpu_to_le16(0),
-	.operations_n = __constant_cpu_to_le32(10),
+	.std_ver		= __constant_cpu_to_le16(100),	/* Standard version 1.00 */
+	.vendor_ext_id		= __constant_cpu_to_le32(0),
+	.vendor_ext_ver		= __constant_cpu_to_le16(0),
+	.vendor_ext_desc_len	= __constant_cpu_to_le16(0),
+	.func_mode		= __constant_cpu_to_le16(0),
+	.operations_n		= __constant_cpu_to_le32(ARRAY_SIZE(dummy_supported_operations)),
 	.operations = {
-		__constant_cpu_to_le16(PIMA15740_OP_GET_DEVICE_INFO),
-		__constant_cpu_to_le16(PIMA15740_OP_OPEN_SESSION),
-		__constant_cpu_to_le16(PIMA15740_OP_CLOSE_SESSION),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_STORAGE_IDS),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_STORAGE_INFO),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_NUM_OBJECTS),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_HANDLES),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_INFO),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT),
-		__constant_cpu_to_le16(PIMA15740_OP_GET_THUMB),
+		SUPPORTED_OPERATIONS
 	},
-	.events_n = __constant_cpu_to_le32(0),
-	.device_properties_n = __constant_cpu_to_le32(0),
-	.capture_formats_n = __constant_cpu_to_le32(0),
-	.image_formats_n = __constant_cpu_to_le32(5),
+	.events_n		= __constant_cpu_to_le32(0),
+	.device_properties_n	= __constant_cpu_to_le32(0),
+	.capture_formats_n	= __constant_cpu_to_le32(0),
+	.image_formats_n	= __constant_cpu_to_le32(ARRAY_SIZE(dummy_supported_formats)),
 	.image_formats = {
-		__constant_cpu_to_le16(PIMA15740_FMT_EXIF_JPEG),
-		__constant_cpu_to_le16(PIMA15740_FMT_TIFF_EP),
-		__constant_cpu_to_le16(PIMA15740_FMT_PNG),
-		__constant_cpu_to_le16(PIMA15740_FMT_TIFF),
-		__constant_cpu_to_le16(PIMA15740_FMT_TIFF_IT),
+		SUPPORTED_FORMATS
 	},
 	.manuf_len = sizeof(manuf),
 	.model_len = sizeof(model),
@@ -459,8 +479,8 @@ struct my_storage_info {
 
 static struct my_storage_info storage_info = {
 	.storage_type		= __constant_cpu_to_le16(PIMA15740_STORAGE_REMOVABLE_RAM),
-	.filesystem_type	= __constant_cpu_to_le16(PIMA15740_FILESYSTEM_GENERIC_FLAT),
-	.access_capability	= __constant_cpu_to_le16(PIMA15740_ACCESS_CAP_RO_WITHOUT_DEL),
+	.filesystem_type	= __constant_cpu_to_le16(PIMA15740_FILESYSTEM_DCF),
+	.access_capability	= __constant_cpu_to_le16(PIMA15740_ACCESS_CAP_RW),
 	.desc_len		= sizeof(storage_desc),
 	.volume_label_len	= 0,
 };
@@ -518,6 +538,24 @@ struct ptp_object_info {
 	uint8_t		strings[];
 } __attribute__ ((packed));
 
+static struct ptp_object_info association = {
+	.storage_id		= __constant_cpu_to_le32(STORE_ID),
+	.object_format		= __constant_cpu_to_le16(PIMA15740_FMT_A_ASSOCIATION),
+	.protection_status	= __constant_cpu_to_le16(0),	/* Read-only */
+	.object_compressed_size	= __constant_cpu_to_le32(4096),
+	.thumb_format		= __constant_cpu_to_le16(0),
+	.thumb_compressed_size	= __constant_cpu_to_le32(0),
+	.thumb_pix_width	= __constant_cpu_to_le32(0),
+	.thumb_pix_height	= __constant_cpu_to_le32(0),
+	.image_pix_width	= __constant_cpu_to_le32(0),
+	.image_pix_height	= __constant_cpu_to_le32(0),
+	.image_bit_depth	= __constant_cpu_to_le32(0),
+	.parent_object		= __constant_cpu_to_le32(0),	/* Will be overwritten */
+	.association_type	= __constant_cpu_to_le16(1),	/* Generic Folder */
+	.association_desc	= __constant_cpu_to_le32(0),
+	.sequence_number	= __constant_cpu_to_le32(0),
+};
+
 struct obj_list {
 	struct obj_list		*next;
 	uint32_t		handle;
@@ -527,11 +565,18 @@ struct obj_list {
 };
 
 static struct obj_list *images;
-static int object_number;		/* number of objects - decrement when deleting */
+/* number of objects, including associations - decrement when deleting */
+static int object_number;
+
+static size_t put_string(iconv_t ic, char *buf, const char *s, size_t len);
 
 static int object_handle_valid(unsigned int h)
 {
 	struct obj_list *obj;
+
+	/* First two handles: dcim and PTP_MODEL_DIR */
+	if (h == 1 || h == 2)
+		return 1;
 
 	for (obj = images; obj; obj = obj->next)
 		if (obj->handle == h)
@@ -923,6 +968,20 @@ static int bulk_write(void *buf, size_t length)
 	return count;
 }
 
+static int send_association_handle(int n, struct ptp_container *s)
+{
+	uint32_t *handle;
+
+	s->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	*(uint32_t *)s->payload = __cpu_to_le32(1);
+	s->length = __cpu_to_le32(sizeof(uint32_t) + sizeof(*s));
+
+	handle = (uint32_t *)s->payload + 1;
+	/* The next directory */
+	*handle = __cpu_to_le32(n);
+	return bulk_write(s, (void *)(handle + 1) - (void *)s);
+}
+
 static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 {
 	struct ptp_container *r_container = recv_buf;
@@ -956,11 +1015,27 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 	}
 
 	association = __le32_to_cpu(*(param + 2));
-	if (length > 20 && association != PTP_PARAM_UNUSED && association != PTP_PARAM_ANY) {
+	if (length > 20 && association != PTP_PARAM_UNUSED) {
 		enum pima15740_response_code code;
 		if (!object_handle_valid(association))
 			code = PIMA15740_RESP_INVALID_OBJECT_HANDLE;
-		else
+		else if (association == PTP_PARAM_ANY) {
+			/* "/" is requested */
+			ret = send_association_handle(1, s_container);
+			if (ret < 0) {
+				errno = EPIPE;
+				return ret;
+			} else
+				code = PIMA15740_RESP_OK;
+		} else if (association == 1) {
+			/* The subdirectory of "/DCIM" is requested */
+			ret = send_association_handle(2, s_container);
+			if (ret < 0) {
+				errno = EPIPE;
+				return ret;
+			} else
+				code = PIMA15740_RESP_OK;
+		} else
 			code = PIMA15740_RESP_INVALID_PARENT_OBJECT;
 
 		make_response(s_container, r_container, code, sizeof(*s_container));
@@ -972,8 +1047,11 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 	s_container->length = __cpu_to_le32((object_number + 1) * sizeof(uint32_t) +
 					    sizeof(*s_container));
 
-	for (obj = images, handle = (uint32_t *)s_container->payload + 1; obj;
-	     obj = obj->next) {
+	handle = (uint32_t *)s_container->payload + 1;
+	/* The two directories */
+	*handle++ = __cpu_to_le32(1);
+	*handle++ = __cpu_to_le32(2);
+	for (obj = images; obj; obj = obj->next) {
 		if ((void *)handle == send_buf + send_len) {
 			ret = bulk_write(send_buf, send_len);
 			if (ret < 0) {
@@ -983,17 +1061,53 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 			handle = send_buf;
 		}
 
-		*handle = __cpu_to_le32(obj->handle);
-
-		handle++;
+		*handle++ = __cpu_to_le32(obj->handle);
 	}
-	if ((void *)handle > send_buf)
-		bulk_write(send_buf, (void *)handle - send_buf);
+	if ((void *)handle > send_buf) {
+		ret = bulk_write(send_buf, (void *)handle - send_buf);
+		if (ret < 0) {
+			errno = EPIPE;
+			return ret;
+		}
+	}
 
 	/* Prepare response */
 	make_response(s_container, r_container, PIMA15740_RESP_OK, sizeof(*s_container));
 
 	return 0;
+}
+
+static int send_association(int n, struct ptp_container *s, size_t size)
+{
+	struct ptp_object_info *objinfo = (struct ptp_object_info *)s->payload;
+	size_t len, total;
+	int ret;
+
+	s->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	memcpy(objinfo, &association, sizeof(association));
+	objinfo->object_compressed_size = __cpu_to_le32(size);
+	switch (n) {
+	case 1:
+		len = strlen("DCIM") + 1;
+		ret = put_string(ic, (char *)objinfo->strings + 1, "DCIM", len);
+		objinfo->parent_object = __cpu_to_le32(0);
+		break;
+	case 2:
+		len = strlen(PTP_MODEL_DIR) + 1;
+		ret = put_string(ic, (char *)objinfo->strings + 1, PTP_MODEL_DIR, len);
+		objinfo->parent_object = __cpu_to_le32(1);
+		break;
+	}
+	if (ret < 0)
+		return ret;
+	objinfo->strings[0] = len;
+	objinfo->strings[2 * len + 1] = 0;	/* Empty Capture Date */
+	objinfo->strings[2 * len + 2] = 0;	/* Empty Modification Date */
+	objinfo->strings[2 * len + 3] = 0;	/* Empty Keywords */
+	total = 2 * len + 4 + sizeof(*s) + sizeof(*objinfo);
+	s->length = __cpu_to_le32(total);
+
+	return bulk_write(s, total);
 }
 
 static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
@@ -1006,9 +1120,35 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 	uint32_t handle;
 	size_t count, total, offset;
 	void *info;
+	enum pima15740_response_code code = PIMA15740_RESP_OK;
 
 	param = (uint32_t *)r_container->payload;
 	handle = __le32_to_cpu(*param);
+
+	if (handle == 1 || handle == 2) {
+		struct stat dstat;
+		size_t size;
+
+		/* Directory information requested */
+		if (handle == 2) {
+			ret = stat(root, &dstat);
+			if (ret < 0) {
+				errno = EPIPE;
+				return ret;
+			}
+			size = dstat.st_size;
+			if (verbose > 1)
+				fprintf(stderr, "%s size %u\n", root, size);
+		} else
+			size = 4096;
+		ret = send_association(handle, s_container, size);
+		if (ret < 0) {
+			errno = EPIPE;
+			return ret;
+		}
+
+		goto send_resp;
+	}
 
 	/* We do not support PIMA15740_OP_DELETE_OBJECT yet, but maybe we will some time */
 	for (obj = images; obj; obj = obj->next)
@@ -1016,9 +1156,8 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 			break;
 
 	if (!obj) {
-		make_response(s_container, r_container, PIMA15740_RESP_INVALID_OBJECT_HANDLE,
-			      sizeof(*s_container));
-		return 0;
+		code = PIMA15740_RESP_INVALID_OBJECT_HANDLE;
+		goto send_resp;
 	}
 
 	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
@@ -1044,8 +1183,9 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 		total -= count;
 	}
 
+send_resp:
 	/* Prepare response */
-	make_response(s_container, r_container, PIMA15740_RESP_OK, sizeof(*s_container));
+	make_response(s_container, r_container, code, sizeof(*s_container));
 
 	return 0;
 }
@@ -1546,7 +1686,7 @@ static void handle_control(struct usb_ctrlrequest *setup)
 {
 	int		err, tmp;
 	uint8_t		buf[256];
-	uint16_t		value, index, length;
+	uint16_t	value, index, length;
 
 	value = __le16_to_cpu(setup->wValue);
 	index = __le16_to_cpu(setup->wIndex);
@@ -1688,6 +1828,21 @@ static void handle_control(struct usb_ctrlrequest *setup)
 			perror("ack DEVICE_RESET_REQUEST");
 		return;
 	case USB_REQ_PTP_GET_DEVICE_STATUS_REQUEST:
+		if (setup->bRequestType != 0xa1
+				|| index != 0
+				|| value != 0)
+			goto stall;
+		else {
+			uint16_t resp_ok[] = {
+				__constant_cpu_to_le16(4),
+				__constant_cpu_to_le16(PIMA15740_RESP_OK),
+			};
+			memcpy(buf, resp_ok, 4);
+			err = write(control, buf, 4);
+			if (err != 4)
+				fprintf(stderr, "DEVICE_STATUS_REQUEST %d\n", err);
+		}
+
 		return;
 	default:
 		goto stall;
@@ -1836,7 +1991,8 @@ static int enum_objects(const char *path)
 	DIR *d;
 	int ret;
 	struct obj_list **obj = &images;
-	uint32_t handle = 0;
+	/* First two handles used for /DCIM/PTP_MODEL_DIR */
+	uint32_t handle = 2;
 
 	ret = chdir(path);
 	if (ret < 0)
@@ -1932,17 +2088,17 @@ static int enum_objects(const char *path)
 		(*obj)->info_size = sizeof((*obj)->info) + 2 * (datelen + namelen) + 4;
 
 		(*obj)->info.storage_id			= __cpu_to_le32(STORE_ID);
-		(*obj)->info.object_format		= __cpu_to_le16(PIMA15740_FMT_TIFF);
+		(*obj)->info.object_format		= __cpu_to_le16(PIMA15740_FMT_I_TIFF);
 		(*obj)->info.protection_status		= __cpu_to_le16(fstat.st_mode & S_IWUSR ? 0 : 1);
 		(*obj)->info.object_compressed_size	= __cpu_to_le32(fstat.st_size);
-		(*obj)->info.thumb_format		= __cpu_to_le16(PIMA15740_FMT_TIFF);
+		(*obj)->info.thumb_format		= __cpu_to_le16(PIMA15740_FMT_I_TIFF);
 		(*obj)->info.thumb_compressed_size	= __cpu_to_le32(tstat.st_size);
 		(*obj)->info.thumb_pix_width		= __cpu_to_le32(THUMB_WIDTH);
 		(*obj)->info.thumb_pix_height		= __cpu_to_le32(THUMB_HEIGHT);
 		(*obj)->info.image_pix_width		= __cpu_to_le32(0);	/* 0 == */
 		(*obj)->info.image_pix_height		= __cpu_to_le32(0);	/* not */
 		(*obj)->info.image_bit_depth		= __cpu_to_le32(0);	/* supported */
-		(*obj)->info.parent_object		= __cpu_to_le32(0);
+		(*obj)->info.parent_object		= __cpu_to_le32(2);	/* Fixed /dcim/xxx/ */
 		(*obj)->info.association_type		= __cpu_to_le16(0);
 		(*obj)->info.association_desc		= __cpu_to_le32(0);
 		(*obj)->info.sequence_number		= __cpu_to_le32(0);
