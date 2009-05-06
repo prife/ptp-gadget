@@ -17,14 +17,10 @@ http://www.linux-usb.org/gadget/usbstring.[ch].
 As of v0.2 only the minimal compulsory set of PTP requests, as specified in the
 standard, is supported. Supported are downloading of images and generation of
 thumbnails, using the "convert" utility from the ImageMagick package. Several
-popular image formats are supported, but currently only tiff images are
-processed. Thumbnails are created as uncompressed 160x120 pixel TIFF images and
+popular image formats are supported, but currently only TIFF and JPEG images are
+processed. Thumbnails are created as compressed 160x120 pixel JFIF images and
 are stored under /var/cache/ptp/thumb/, so this directory must exist and be
 writable by the ptp-gadget user.
-
-Note about USB IDs: currently you cannot build the package as is, because we
-have no valid Vendor and Product IDs yet. As soon as IDs are available, they
-will be added to the package.
 
 To build use
 
@@ -39,10 +35,7 @@ The program takes one compulsory parameter - the path to the directory, in which
 images are stored. Optionally, "-v" switches can be used to increment verbosity
 level of the program.
 
-Known problems: not yet working with Mac OS X (tested with 10.4) hosts, previous
-versions did not work with MS Windows, status of the current version is unknown.
-A possible reason can be unimplemented Associations, whereas normally still
-cameras store images under a "dcim" directory.
+Known problems: not yet working with MS Windows Vista.
 
 To contact developers of this software please write to the Linux USB mailing
 list at <linux-usb@vger.kernel.org> and (optionally) CC the original author as

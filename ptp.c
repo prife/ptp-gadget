@@ -27,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/vfs.h>
 #include <sys/wait.h>
+#include <sys/utsname.h>
 
 #include <asm/byteorder.h>
 
@@ -47,29 +48,23 @@ static int verbose;
 #define USB_REQ_PTP_DEVICE_RESET_REQUEST	0x66
 #define USB_REQ_PTP_GET_DEVICE_STATUS_REQUEST	0x67
 
-/*
- *			A T T E N T I O N ! ! !
- *
- * You have to obtain valid Vendor and Product IDs as described at
- * http://www.usb.org/developers/vendor/ Until then this program will not build.
- * You are free to modify other strings below to your heart's content.
- */
-//#define DRIVER_VENDOR_NUM	0x....		/* 16-bit USB vendor ID */
-//#define DRIVER_PRODUCT_NUM	0x....		/* 16-bit USB product ID */
-#define DRIVER_MFGR		"Licensed to ..."
-#define DRIVER_SERIAL		"000-000.001"
-#define PTP_MANUFACTURER	"Manufacturer name goes here"
-#define PTP_MODEL		"Linux USB Still Image gadget"
-#define PTP_STORAGE_DESC	"SD/MMC"
-#define PTP_MODEL_DIR		"100LINUX"
-/* These have been chosen with meaningful values, can be safely preserved */
-#define DRIVER_PRODUCT		"PTP gadget"
+#define DRIVER_VENDOR_NUM	0x1d6b
+#define DRIVER_PRODUCT_NUM	0x0100
+#define DRIVER_MFGR		"Linux"
+#define DRIVER_PRODUCT		"PTP Gadget"
 #define DRIVER_CONFIG		"Configuration 0"
 #define DRIVER_INTERFACE	"Source/Sink"
 
-#if !defined(DRIVER_VENDOR_NUM) || !defined(DRIVER_PRODUCT_NUM)
-#error Please, obtain valid Vendor and Product IDs from usb.org
-#endif
+/* Will be used for bcdDevice: remember to update on major changes */
+#define MAJOR			1
+#define MINOR			0
+#define DRIVER_VERSION		((MAJOR << 8) | MINOR)
+#define VERSION_STRING		__stringify(MAJOR) "." __stringify(MINOR)
+
+#define PTP_MANUFACTURER	"Linux Foundation"
+#define PTP_MODEL		"PTP Gadget"
+#define PTP_STORAGE_DESC	"SD/MMC"
+#define PTP_MODEL_DIR		"100LINUX"
 
 /*-------------------------------------------------------------------------*/
 
@@ -77,15 +72,15 @@ static int verbose;
 
 #define	STRINGID_MFGR		1
 #define	STRINGID_PRODUCT	2
-#define	STRINGID_SERIAL		3
-#define	STRINGID_CONFIG		4
-#define	STRINGID_INTERFACE	5
+#define	STRINGID_CONFIG		3
+#define	STRINGID_INTERFACE	4
 
 static struct usb_device_descriptor device_desc = {
 	.bLength =		sizeof device_desc,
 	.bDescriptorType =	USB_DT_DEVICE,
 
 	.bcdUSB =		__constant_cpu_to_le16(0x0200),
+	.bcdDevice =		__constant_cpu_to_le16(DRIVER_VERSION),
 	.bDeviceClass =		USB_CLASS_PER_INTERFACE,
 	.bDeviceSubClass =	0,
 	.bDeviceProtocol =	0,
@@ -94,7 +89,6 @@ static struct usb_device_descriptor device_desc = {
 	.idProduct =		__constant_cpu_to_le16(DRIVER_PRODUCT_NUM),
 	.iManufacturer =	STRINGID_MFGR,
 	.iProduct =		STRINGID_PRODUCT,
-	.iSerialNumber =	STRINGID_SERIAL,
 	.bNumConfigurations =	1,
 };
 
@@ -213,12 +207,12 @@ static const struct usb_endpoint_descriptor *hs_eps[] = {
 
 /*-------------------------------------------------------------------------*/
 
-static char serial[] = DRIVER_SERIAL;
+
+static char driver_mfgr[64];
 
 static struct usb_string stringtab[] = {
-	{ STRINGID_MFGR,	DRIVER_MFGR, },
+	{ STRINGID_MFGR,	driver_mfgr, },
 	{ STRINGID_PRODUCT,	DRIVER_PRODUCT, },
-	{ STRINGID_SERIAL,	serial, },
 	{ STRINGID_CONFIG,	DRIVER_CONFIG, },
 	{ STRINGID_INTERFACE,	DRIVER_INTERFACE, },
 };
@@ -588,12 +582,13 @@ static int object_handle_valid(unsigned int h)
 static int autoconfig(void)
 {
 	struct stat	statb;
+	struct utsname	uts;
+	int ret;
 
 	/* NetChip 2280 PCI device or dummy_hcd, high/full speed */
 	if (stat(DEVNAME = "net2280", &statb) == 0 ||
 			stat(DEVNAME = "dummy_udc", &statb) == 0) {
 		HIGHSPEED = 1;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0100),
 
 		fs_source_desc.bEndpointAddress
 			= hs_source_desc.bEndpointAddress
@@ -612,7 +607,6 @@ static int autoconfig(void)
 	/* Intel PXA 2xx processor, full speed only */
 	} else if (stat(DEVNAME = "pxa2xx_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0101),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 6;
 		EP_IN_NAME = "ep6in-bulk";
@@ -629,7 +623,6 @@ static int autoconfig(void)
 	/* AMD au1x00 processor, full speed only */
 	} else if (stat(DEVNAME = "au1x00_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0102),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 2;
 		EP_IN_NAME = "ep2in";
@@ -643,7 +636,6 @@ static int autoconfig(void)
 	/* Intel SA-1100 processor, full speed only */
 	} else if (stat(DEVNAME = "sa1100", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0103),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 2;
 		EP_IN_NAME = "ep2in-bulk";
@@ -657,7 +649,6 @@ static int autoconfig(void)
 	/* Toshiba TC86c001 PCI device, full speed only */
 	} else if (stat(DEVNAME = "goku_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0104),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 2;
 		EP_IN_NAME = "ep2-bulk";
@@ -671,7 +662,6 @@ static int autoconfig(void)
 	/* Renesas SH77xx processors, full speed only */
 	} else if (stat(DEVNAME = "sh_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0105),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 2;
 		EP_IN_NAME = "ep2in-bulk";
@@ -685,7 +675,6 @@ static int autoconfig(void)
 	/* OMAP 1610 and newer devices, full speed only, fifo mode 0 or 3 */
 	} else if (stat(DEVNAME = "omap_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0106),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 1;
 		EP_IN_NAME = "ep1in-bulk";
@@ -699,7 +688,6 @@ static int autoconfig(void)
 	/* Something based on Mentor USB Highspeed Dual-Role Controller */
 	} else if (stat(DEVNAME = "musb_hdrc", &statb) == 0) {
 		HIGHSPEED = 1;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0107),
 
 		fs_source_desc.bEndpointAddress
 			= hs_source_desc.bEndpointAddress
@@ -718,7 +706,6 @@ static int autoconfig(void)
 	/* Atmel AT91 processors, full speed only */
 	} else if (stat(DEVNAME = "at91_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0106),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 1;
 		EP_IN_NAME = "ep1";
@@ -732,7 +719,6 @@ static int autoconfig(void)
 	/* Sharp LH740x processors, full speed only */
 	} else if (stat(DEVNAME = "lh740x_udc", &statb) == 0) {
 		HIGHSPEED = 0;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0106),
 
 		fs_source_desc.bEndpointAddress = USB_DIR_IN | 1;
 		EP_IN_NAME = "ep1in-bulk";
@@ -746,7 +732,6 @@ static int autoconfig(void)
 	/* Atmel AT32AP700x processors, high/full speed */
 	} else if (stat(DEVNAME = "atmel_usba_udc", &statb) == 0) {
 		HIGHSPEED = 1;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0108);
 
 		fs_source_desc.bEndpointAddress
 			= hs_source_desc.bEndpointAddress
@@ -766,7 +751,6 @@ static int autoconfig(void)
 	/* Freescale i.MX31 SoC, high/full speed */
 	} else if (stat(DEVNAME = "fsl-usb2-udc", &statb) == 0) {
 		HIGHSPEED = 1;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x0109);
 
 		fs_source_desc.bEndpointAddress
 			= hs_source_desc.bEndpointAddress
@@ -784,7 +768,6 @@ static int autoconfig(void)
 		EP_STATUS_NAME = "ep2in";
 	} else if (stat(DEVNAME = "arc_udc", &statb) == 0) {
 		HIGHSPEED = 1;
-		device_desc.bcdDevice = __constant_cpu_to_le16(0x010a);
 
 		fs_source_desc.bEndpointAddress
 			= hs_source_desc.bEndpointAddress
@@ -804,6 +787,11 @@ static int autoconfig(void)
 		DEVNAME = 0;
 		return -ENODEV;
 	}
+
+	ret = uname(&uts);
+	snprintf(driver_mfgr, sizeof(driver_mfgr), DRIVER_MFGR " %s with %s",
+		 ret ? "unknown" : uts.release, DEVNAME);
+
 	return 0;
 }
 
@@ -1603,7 +1591,8 @@ static int start_io(void)
 	int ret;
 	char buf[256];
 
-	fprintf(stderr, "Start bulk EPs\n");
+	if (verbose)
+		fprintf(stderr, "Start bulk EPs\n");
 
 	if (bulk_in >= 0 && bulk_out >= 0)
 		return 0;
@@ -2180,6 +2169,8 @@ int main(int argc, char *argv[])
 	int c, ret;
 	struct stat root_stat;
 
+	puts("Linux PTP Gadget v" VERSION_STRING);
+
 	ic = iconv_open("UCS-2LE", "ISO8859-1");
 	if (ic == (iconv_t)-1) {
 		perror("iconv_open");
@@ -2224,8 +2215,6 @@ int main(int argc, char *argv[])
 	if (control < 0)
 		exit(EXIT_FAILURE);
 
-	fprintf(stderr, "/dev/gadget/%s ep0 configured\nserial=\"%s\"\n",
-		DEVNAME, serial);
 	fflush(stderr);
 
 	ret = main_loop();
