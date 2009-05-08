@@ -961,8 +961,9 @@ static int send_association_handle(int n, struct ptp_container *s)
 	uint32_t *handle;
 
 	s->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	/* One array element */
 	*(uint32_t *)s->payload = __cpu_to_le32(1);
-	s->length = __cpu_to_le32(sizeof(uint32_t) + sizeof(*s));
+	s->length = __cpu_to_le32(2 * sizeof(uint32_t) + sizeof(*s));
 
 	handle = (uint32_t *)s->payload + 1;
 	/* The next directory */
@@ -981,6 +982,7 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 	int ret;
 	uint32_t *handle;
 	uint32_t format, association;
+	int obj_to_send = object_number;
 
 	length	= __le32_to_cpu(r_container->length);
 
@@ -1003,9 +1005,9 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 	}
 
 	association = __le32_to_cpu(*(param + 2));
-	if (length > 20 && association != PTP_PARAM_UNUSED) {
+	if (length > 20 && association != PTP_PARAM_UNUSED && association != 2) {
 		enum pima15740_response_code code;
-		if (!object_handle_valid(association))
+		if (!object_handle_valid(association) && association != PTP_PARAM_ANY)
 			code = PIMA15740_RESP_INVALID_OBJECT_HANDLE;
 		else if (association == PTP_PARAM_ANY) {
 			/* "/" is requested */
@@ -1030,15 +1032,23 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 		return 0;
 	}
 
+	if (association == 2)
+		/* Only send contents of /DCIM/100LINUX */
+		obj_to_send -= 2;
+
 	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
-	*(uint32_t *)s_container->payload = __cpu_to_le32(object_number);
-	s_container->length = __cpu_to_le32((object_number + 1) * sizeof(uint32_t) +
+	*(uint32_t *)s_container->payload = __cpu_to_le32(obj_to_send);
+	s_container->length = __cpu_to_le32((obj_to_send + 1) * sizeof(uint32_t) +
 					    sizeof(*s_container));
 
 	handle = (uint32_t *)s_container->payload + 1;
-	/* The two directories */
-	*handle++ = __cpu_to_le32(1);
-	*handle++ = __cpu_to_le32(2);
+
+	if (association != 2) {
+		/* The two directories */
+		*handle++ = __cpu_to_le32(1);
+		*handle++ = __cpu_to_le32(2);
+	}
+
 	for (obj = images; obj; obj = obj->next) {
 		if ((void *)handle == send_buf + send_len) {
 			ret = bulk_write(send_buf, send_len);
@@ -1512,12 +1522,23 @@ static int process_one_request(void *recv_buf, size_t *recv_size, void *send_buf
 				code = PIMA15740_RESP_INVALID_STORAGE_ID;
 			else if (count > 16 && p2 != PTP_PARAM_UNUSED && p2 != PTP_PARAM_ANY)
 				code = PIMA15740_RESP_SPECIFICATION_BY_FORMAT_NOT_SUPPORTED;
-			else if (count > 20 && p3 != PTP_PARAM_UNUSED && p3 != PTP_PARAM_ANY) {
+			else if (count > 20 && p3 != PTP_PARAM_UNUSED) {
 				if (!object_handle_valid(p3))
 					code = PIMA15740_RESP_INVALID_OBJECT_HANDLE;
-				else/* if (p3 != img_folder_assoc_id)*/
+				else if (p3 == PTP_PARAM_ANY || p3 == 1) {
+					/* root or DCIM - report one handle */
+					code = PIMA15740_RESP_OK;
+					ret += sizeof(*param);
+					*param = __cpu_to_le32(1);
+				} else if (p3 == 2) {
+					/* Contents of 100LINUX */
+					code = PIMA15740_RESP_OK;
+					ret += sizeof(*param);
+					*param = __cpu_to_le32(object_number - 2);
+				} else
 					code = PIMA15740_RESP_INVALID_PARENT_OBJECT;
 			} else {
+				/* No parent Association specified or 0 */
 				code = PIMA15740_RESP_OK;
 				ret += sizeof(*param);
 				*param = __cpu_to_le32(object_number);
