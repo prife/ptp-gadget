@@ -701,7 +701,7 @@ static int autoconfig(void)
 		fs_status_desc.bEndpointAddress
 			= hs_status_desc.bEndpointAddress
 			= USB_DIR_IN | 3;
-		EP_STATUS_NAME = "ep3";
+		EP_STATUS_NAME = "ep3in";
 
 	/* Atmel AT91 processors, full speed only */
 	} else if (stat(DEVNAME = "at91_udc", &statb) == 0) {
