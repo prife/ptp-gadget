@@ -928,9 +928,9 @@ static void make_response(struct ptp_container *s_cntn, struct ptp_container *r_
 			  enum pima15740_response_code code, size_t len)
 {
 	s_cntn->id = r_cntn->id;
-	s_cntn->type = __cpu_to_le32(PTP_CONTAINER_TYPE_RESPONSE_BLOCK);
+	s_cntn->type = __cpu_to_le16(PTP_CONTAINER_TYPE_RESPONSE_BLOCK);
 	s_cntn->code = __cpu_to_le16(code);
-	s_cntn->length = __cpu_to_le16(len);
+	s_cntn->length = __cpu_to_le32(len);
 }
 
 static int bulk_write(void *buf, size_t length)
@@ -960,7 +960,7 @@ static int send_association_handle(int n, struct ptp_container *s)
 {
 	uint32_t *handle;
 
-	s->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	/* One array element */
 	*(uint32_t *)s->payload = __cpu_to_le32(1);
 	s->length = __cpu_to_le32(2 * sizeof(uint32_t) + sizeof(*s));
@@ -1036,7 +1036,7 @@ static int send_object_handles(void *recv_buf, void *send_buf, size_t send_len)
 		/* Only send contents of /DCIM/100LINUX */
 		obj_to_send -= 2;
 
-	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	*(uint32_t *)s_container->payload = __cpu_to_le32(obj_to_send);
 	s_container->length = __cpu_to_le32((obj_to_send + 1) * sizeof(uint32_t) +
 					    sizeof(*s_container));
@@ -1081,7 +1081,7 @@ static int send_association(int n, struct ptp_container *s, size_t size)
 	size_t len, total;
 	int ret;
 
-	s->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	memcpy(objinfo, &association, sizeof(association));
 	objinfo->object_compressed_size = __cpu_to_le32(size);
 	switch (n) {
@@ -1158,7 +1158,7 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 		goto send_resp;
 	}
 
-	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	total = obj->info_size + sizeof(*s_container);
 	s_container->length = __cpu_to_le32(total);
 	offset = sizeof(*s_container);
@@ -1215,14 +1215,14 @@ static int send_object_or_thumb(void *recv_buf, void *send_buf, size_t send_len,
 		return 0;
 	}
 
-	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	offset = sizeof(*s_container);
 
 	if (!thumb) {
 		strncpy(name, obj->name, sizeof(name) - 1);
 		name[sizeof(name) - 1] = '\0';
 		ret = chdir(root);
-		file_size = obj->info.object_compressed_size;
+		file_size = __le32_to_cpu(obj->info.object_compressed_size);
 	} else {
 		char *dot = strrchr(obj->name, '.');
 		*dot = '\0';			/* We know there is a dot in the name */
@@ -1230,10 +1230,12 @@ static int send_object_or_thumb(void *recv_buf, void *send_buf, size_t send_len,
 		*dot = '.';
 		name[sizeof(name) - 1] = '\0';
 		ret = chdir(THUMB_LOCATION);
-		file_size = obj->info.thumb_compressed_size;
+		file_size = __le32_to_cpu(obj->info.thumb_compressed_size);
 	}
 
 	total = file_size + sizeof(*s_container);
+	if (verbose)
+		fprintf(stderr, "%s(): total %d\n", __func__, total);
 	s_container->length = __cpu_to_le32(total);
 
 	if (!ret)
@@ -1292,7 +1294,7 @@ static int send_storage_ids(void *recv_buf, void *send_buf, size_t send_len)
 	uint32_t *param;
 	int ret;
 
-	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	s_container->length = __cpu_to_le32(20);
 	param = (uint32_t *)s_container->payload;
 
@@ -1306,9 +1308,9 @@ static int send_storage_ids(void *recv_buf, void *send_buf, size_t send_len)
 
 	/* Prepare response */
 	memcpy(send_buf, recv_buf, sizeof(*s_container));
-	s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_RESPONSE_BLOCK);
+	s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_RESPONSE_BLOCK);
 	s_container->code = __cpu_to_le16(PIMA15740_RESP_OK);
-	s_container->length = __cpu_to_le16(sizeof(*s_container));
+	s_container->length = __cpu_to_le32(sizeof(*s_container));
 
 	return 0;
 }
@@ -1349,7 +1351,7 @@ static int send_storage_info(void *recv_buf, void *send_buf, size_t send_len)
 
 	count = sizeof(storage_info) + sizeof(*s_container);
 
-	s_container->type	= __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+	s_container->type	= __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 	s_container->length	= __cpu_to_le32(count);
 
 	bytes					= (unsigned long long)fs.f_bsize * fs.f_blocks;
@@ -1426,7 +1428,7 @@ static int process_one_request(void *recv_buf, size_t *recv_size, void *send_buf
 			count = sizeof(dev_info) + sizeof(*s_container);
 
 			/* First part: data block */
-			s_container->type = __cpu_to_le32(PTP_CONTAINER_TYPE_DATA_BLOCK);
+			s_container->type = __cpu_to_le16(PTP_CONTAINER_TYPE_DATA_BLOCK);
 			s_container->length = __cpu_to_le32(count);
 			memcpy(send_buf + sizeof(*s_container), &dev_info, sizeof(dev_info));
 			ret = bulk_write(s_container, count);
