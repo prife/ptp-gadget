@@ -2019,7 +2019,6 @@ static int enum_objects(const char *path)
 		enum pima15740_data_format format;
 		struct tm mod_tm;
 
-		dentry->d_name[sizeof(dentry->d_name) - 1] = '\0';
 		dot = strrchr(dentry->d_name, '.');
 
 		if (!dot || dot == dentry->d_name)
