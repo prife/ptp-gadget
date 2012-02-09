@@ -397,7 +397,8 @@ static const char storage_desc[] = PTP_STORAGE_DESC;
 	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_HANDLES),\
 	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT_INFO),	\
 	__constant_cpu_to_le16(PIMA15740_OP_GET_OBJECT),	\
-	__constant_cpu_to_le16(PIMA15740_OP_GET_THUMB),
+	__constant_cpu_to_le16(PIMA15740_OP_GET_THUMB),		\
+	__constant_cpu_to_le16(PIMA15740_OP_DELETE_OBJECT),
 
 static uint16_t dummy_supported_operations[] = {
 	SUPPORTED_OPERATIONS
@@ -1148,7 +1149,6 @@ static int send_object_info(void *recv_buf, void *send_buf, size_t send_len)
 		goto send_resp;
 	}
 
-	/* We do not support PIMA15740_OP_DELETE_OBJECT yet, but maybe we will some time */
 	for (obj = images; obj; obj = obj->next)
 		if (obj->handle == handle)
 			break;
@@ -1204,7 +1204,6 @@ static int send_object_or_thumb(void *recv_buf, void *send_buf, size_t send_len,
 	param = (uint32_t *)r_container->payload;
 	handle = __le32_to_cpu(*param);
 
-	/* We do not support PIMA15740_OP_DELETE_OBJECT yet, but maybe we will some time */
 	for (obj = images; obj; obj = obj->next)
 		if (obj->handle == handle)
 			break;
@@ -1371,6 +1370,187 @@ static int send_storage_info(void *recv_buf, void *send_buf, size_t send_len)
 	make_response(s_container, r_container, PIMA15740_RESP_OK, sizeof(*s_container));
 
 	return 0;
+}
+
+static void delete_thumb(struct obj_list *obj)
+{
+	char thumb[256];
+	char *dot;
+
+	if (__le16_to_cpu(obj->info.thumb_format) != PIMA15740_FMT_I_JFIF)
+		return;
+
+	dot = strrchr(obj->name, '.');
+	if (!dot || dot == obj->name)
+		return;
+
+	*dot = 0;
+	snprintf(thumb, sizeof(thumb), THUMB_LOCATION "%s.thumb.jpeg",
+		 obj->name);
+	*dot = '.';
+
+	if (unlink(thumb))
+		fprintf(stderr, "Cannot delete %s: %s\n",
+			thumb, strerror(errno));
+}
+
+static enum pima15740_response_code delete_file(const char *name)
+{
+	struct stat st;
+	int ret;
+	uid_t euid;
+	gid_t egid;
+
+	/* access() is unreliable on NFS, we use stat() instead */
+	ret = stat(name, &st);
+	if (ret < 0) {
+		fprintf(stderr, "Cannot stat %s: %s\n", name, strerror(errno));
+		return PIMA15740_RESP_GENERAL_ERROR;
+	}
+
+	euid = geteuid();
+	if (euid == st.st_uid) {
+		if (!(st.st_mode & S_IWUSR))
+			return PIMA15740_RESP_OBJECT_WRITE_PROTECTED;
+		goto del;
+	}
+
+	egid = getegid();
+	if (egid == st.st_gid) {
+		if (!(st.st_mode & S_IWGRP))
+			return PIMA15740_RESP_OBJECT_WRITE_PROTECTED;
+		goto del;
+	}
+
+	if (!(st.st_mode & S_IWOTH))
+		return PIMA15740_RESP_OBJECT_WRITE_PROTECTED;
+
+del:
+	ret = unlink(name);
+	if (ret) {
+		fprintf(stderr, "Cannot delete %s: %s\n",
+			name, strerror(errno));
+		return PIMA15740_RESP_GENERAL_ERROR;
+	}
+
+	return PIMA15740_RESP_OK;
+}
+
+static int update_free_space(void)
+{
+	unsigned long long bytes;
+	struct statfs fs;
+	int ret;
+
+	ret = statfs(root, &fs);
+	if (ret < 0) {
+		fprintf(stderr, "statfs %s: %s\n", root, strerror(errno));
+		return ret;
+	}
+
+	if (verbose > 1)
+		fprintf(stdout, "Block-size %d, total %d, free %d\n",
+			fs.f_bsize, (int)fs.f_blocks, (int)fs.f_bfree);
+
+	bytes = (unsigned long long)fs.f_bsize * fs.f_bfree;
+	storage_info.free_space_in_bytes = __cpu_to_le64(bytes);
+	return 0;
+}
+
+static void delete_object(void *recv_buf, void *send_buf)
+{
+	struct ptp_container *r_container = recv_buf;
+	struct ptp_container *s_container = send_buf;
+	enum pima15740_response_code code = PIMA15740_RESP_OK;
+	uint32_t format, handle;
+	uint32_t *param;
+	unsigned long length;
+	int ret = 0;
+
+	length = __le32_to_cpu(r_container->length);
+
+	param = (uint32_t *)r_container->payload;
+	handle = __le32_to_cpu(*param);
+	format = __le32_to_cpu(*(param + 1));
+
+	if (length > 16 && format != PTP_PARAM_UNUSED) {
+		/* ObjectFormatCode not supported */
+		code = PIMA15740_RESP_SPECIFICATION_BY_FORMAT_NOT_SUPPORTED;
+		goto resp;
+	} else if (handle == 1 || handle == 2) {
+		/* read-only /DCIM and /DCIM/100LINUX */
+		code = PIMA15740_RESP_OBJECT_WRITE_PROTECTED;
+		goto resp;
+	}
+
+	ret = chdir(root);
+	if (ret) {
+		fprintf(stderr, "chdir %s: %s\n", root, strerror(errno));
+		code = PIMA15740_RESP_GENERAL_ERROR;
+		goto resp;
+	}
+
+	if (handle == PTP_PARAM_ANY) {
+		struct obj_list *obj, **anchor;
+		int partial = 0;
+
+		anchor = &images;
+		obj = images;
+
+		if (!obj) {
+			code = PIMA15740_RESP_OK;
+			goto resp;
+		}
+
+		while (obj) {
+			code = delete_file(obj->name);
+			if (code == PIMA15740_RESP_OK) {
+				delete_thumb(obj);
+				*anchor = obj->next;
+				free(obj);
+				obj = *anchor;
+				object_number--;
+			} else {
+				anchor = &obj->next;
+				obj = obj->next;
+				partial++;
+			}
+		}
+
+		if (partial)
+			code = PIMA15740_RESP_PARTIAL_DELETION;
+	} else {
+		struct obj_list *obj, **anchor;
+
+		anchor = &images;
+		obj = images;
+
+		while (obj) {
+			if (obj->handle == handle)
+				break;
+			anchor = &obj->next;
+			obj = obj->next;
+		}
+
+		if (obj) {
+			code = delete_file(obj->name);
+			if (code == PIMA15740_RESP_OK) {
+				delete_thumb(obj);
+				*anchor = obj->next;
+				free(obj);
+				object_number--;
+			}
+		} else {
+			code = PIMA15740_RESP_INVALID_OBJECT_HANDLE;
+		}
+	}
+
+	ret = update_free_space();
+	if (ret < 0)
+		code = PIMA15740_RESP_STORE_NOT_AVAILABLE;
+
+resp:
+	make_response(s_container, r_container, code, sizeof(*s_container));
 }
 
 static int process_one_request(void *recv_buf, size_t *recv_size, void *send_buf, size_t *send_size)
@@ -1554,6 +1734,14 @@ static int process_one_request(void *recv_buf, size_t *recv_size, void *send_buf
 
 			ret = send_object_or_thumb(recv_buf, send_buf, *send_size, 1);
 			count = ret; /* even if ret is negative, handled below */
+			break;
+		case PIMA15740_OP_DELETE_OBJECT:
+			CHECK_COUNT(count, 16, 20, "DELETE_OBJECT");
+			CHECK_SESSION(s_container, r_container, &count, &ret);
+
+			delete_object(recv_buf, send_buf);
+			count = 0;
+			ret = 0;
 			break;
 		}
 		break;
